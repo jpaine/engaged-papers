@@ -36,62 +36,46 @@ export function computeEngagementScore(
   
   // Fallback: Use recency-based scoring when all citations are 0
   // This gives newer papers a higher baseline score
-  // Extract published dates from allMetrics (they should have published_at if fetched with papers)
-  const now = new Date();
-  const recencyScores: number[] = [];
-  const publishedDates: Date[] = [];
+  // Use exact timestamp differences for precise differentiation
+  const now = new Date().getTime();
+  const timestampScores: number[] = [];
   
   for (const m of allMetrics) {
     const metricWithDate = m as any;
     if (metricWithDate.published_at) {
-      const publishedDate = new Date(metricWithDate.published_at);
-      publishedDates.push(publishedDate);
-      const daysSincePublished = Math.max(0, (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
-      // Use hours since published for better granularity (papers published same day can differ)
-      const hoursSincePublished = Math.max(0, (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60));
-      // Inverse recency: newer papers get higher scores (using hours for better differentiation)
-      const recencyScore = 1 / (1 + hoursSincePublished / 24); // Convert hours to days for scoring
-      recencyScores.push(recencyScore);
+      const publishedTimestamp = new Date(metricWithDate.published_at).getTime();
+      // Use inverse of milliseconds since published (newer = higher score)
+      // Add 1 to avoid division by zero, scale by 1 day in ms
+      const msSincePublished = Math.max(0, now - publishedTimestamp);
+      const score = 1 / (1 + msSincePublished / (1000 * 60 * 60 * 24)); // Normalize by 1 day
+      timestampScores.push(score);
     } else {
-      publishedDates.push(new Date(0));
-      recencyScores.push(0);
+      timestampScores.push(0);
     }
   }
   
-  if (recencyScores.length > 0 && Math.max(...recencyScores) > 0) {
+  if (timestampScores.length > 0 && Math.max(...timestampScores) > 0) {
     const currentMetric = allMetrics.find((m: any) => m.downloads_7d === downloads7d) as any;
     if (currentMetric?.published_at) {
-      const currentPublishedDate = new Date(currentMetric.published_at);
-      const hoursSincePublished = Math.max(0, (now.getTime() - currentPublishedDate.getTime()) / (1000 * 60 * 60));
-      const currentRecency = 1 / (1 + hoursSincePublished / 24);
+      const currentPublishedTimestamp = new Date(currentMetric.published_at).getTime();
+      const msSincePublished = Math.max(0, now - currentPublishedTimestamp);
+      const currentScore = 1 / (1 + msSincePublished / (1000 * 60 * 60 * 24));
       
-      const minRecency = Math.min(...recencyScores);
-      const maxRecency = Math.max(...recencyScores);
+      const minScore = Math.min(...timestampScores);
+      const maxScore = Math.max(...timestampScores);
       
-      if (maxRecency > minRecency) {
-        return normalize(currentRecency, minRecency, maxRecency);
-      } else if (maxRecency > 0) {
-        // All papers have same recency (same day), use time-of-day as tiebreaker
-        const currentHours = currentPublishedDate.getHours() + currentPublishedDate.getMinutes() / 60;
-        const allHours = publishedDates.map(d => d.getHours() + d.getMinutes() / 60);
-        const minHours = Math.min(...allHours);
-        const maxHours = Math.max(...allHours);
-        if (maxHours > minHours) {
-          return normalize(currentHours, minHours, maxHours);
-        }
-        // Final: use index as tiebreaker
-        const paperIndex = allMetrics.findIndex(m => (m as any).downloads_7d === downloads7d);
-        if (paperIndex >= 0 && allMetrics.length > 1) {
-          return 1 - (paperIndex / (allMetrics.length - 1));
-        }
+      if (maxScore > minScore) {
+        return normalize(currentScore, minScore, maxScore);
       }
     }
   }
   
   // Final fallback: use paper index (newer papers get slightly higher scores)
+  // This ensures all papers get different scores even if published at exact same time
   const paperIndex = allMetrics.findIndex(m => m.downloads_7d === downloads7d);
   if (paperIndex >= 0 && allMetrics.length > 1) {
-    return 1 - (paperIndex / (allMetrics.length - 1));
+    // Distribute scores from 0.5 to 1.0 based on index (newer = higher)
+    return 0.5 + (0.5 * (1 - paperIndex / (allMetrics.length - 1)));
   }
   
   return 0;
@@ -133,14 +117,6 @@ export async function computeEngagementScoresForDate(
   const paperDateMap = new Map<string, string>();
   for (const paper of papers || []) {
     paperDateMap.set(paper.id, paper.published_at);
-  }
-
-  if (error) {
-    throw new Error(`Failed to fetch metrics: ${error.message}`);
-  }
-
-  if (!metrics || metrics.length === 0) {
-    return;
   }
 
   // Attach published dates to metrics for recency-based scoring
