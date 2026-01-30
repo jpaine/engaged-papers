@@ -18,10 +18,11 @@ export async function GET() {
     const today = new Date().toISOString().split('T')[0];
     const metricsToInsert: Omit<PaperMetric, 'id'>[] = [];
 
-    // Fetch citation counts for all papers in batch (with rate limiting)
+    // Fetch citation counts for all papers (with rate limiting)
+    // Note: Very recent papers (< 1 month old) may not have citations yet in Semantic Scholar
     const arxivIds = papers.map(p => p.id);
     console.log(`Fetching citation counts for ${arxivIds.length} papers...`);
-    const citationCounts = await fetchCitationCountsBatch(arxivIds, 10, 300); // 10 at a time, 300ms delay
+    const citationCounts = await fetchCitationCountsBatch(arxivIds, 1, 3000); // Sequential with 3s delay
 
     for (const arxivPaper of papers) {
       // Upsert paper

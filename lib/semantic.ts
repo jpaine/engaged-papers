@@ -52,33 +52,31 @@ export async function fetchCitationCount(arxivId: string): Promise<number> {
 
 /**
  * Fetch citation counts for multiple papers with rate limiting
- * Processes in batches to avoid hitting rate limits
+ * Processes sequentially to avoid hitting rate limits (100 requests per 5 minutes)
  */
 export async function fetchCitationCountsBatch(
   arxivIds: string[],
-  batchSize: number = 10,
-  delayMs: number = 200
+  batchSize: number = 1,
+  delayMs: number = 3000
 ): Promise<Map<string, number>> {
   const results = new Map<string, number>();
   
-  for (let i = 0; i < arxivIds.length; i += batchSize) {
-    const batch = arxivIds.slice(i, i + batchSize);
+  // Process sequentially with delays to respect rate limits
+  // Semantic Scholar allows 100 requests per 5 minutes without API key
+  for (let i = 0; i < arxivIds.length; i++) {
+    const arxivId = arxivIds[i];
     
-    // Process batch in parallel
-    const batchPromises = batch.map(async (arxivId) => {
+    try {
       const count = await fetchCitationCount(arxivId);
-      return { arxivId, count };
-    });
-    
-    const batchResults = await Promise.all(batchPromises);
-    
-    for (const { arxivId, count } of batchResults) {
       results.set(arxivId, count);
-    }
-    
-    // Delay between batches to respect rate limits
-    if (i + batchSize < arxivIds.length) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      
+      // Delay between requests (3 seconds = ~20 requests per minute = safe limit)
+      if (i < arxivIds.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    } catch (error) {
+      console.error(`Error fetching citation for ${arxivId}:`, error);
+      results.set(arxivId, 0);
     }
   }
   
