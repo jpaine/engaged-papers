@@ -39,31 +39,52 @@ export function computeEngagementScore(
   // Extract published dates from allMetrics (they should have published_at if fetched with papers)
   const now = new Date();
   const recencyScores: number[] = [];
+  const publishedDates: Date[] = [];
   
   for (const m of allMetrics) {
     const metricWithDate = m as any;
     if (metricWithDate.published_at) {
       const publishedDate = new Date(metricWithDate.published_at);
-      const daysSincePublished = (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24);
-      // Inverse recency: newer papers get higher scores
-      const recencyScore = 1 / (1 + daysSincePublished);
+      publishedDates.push(publishedDate);
+      const daysSincePublished = Math.max(0, (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Use hours since published for better granularity (papers published same day can differ)
+      const hoursSincePublished = Math.max(0, (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60));
+      // Inverse recency: newer papers get higher scores (using hours for better differentiation)
+      const recencyScore = 1 / (1 + hoursSincePublished / 24); // Convert hours to days for scoring
       recencyScores.push(recencyScore);
     } else {
+      publishedDates.push(new Date(0));
       recencyScores.push(0);
     }
   }
   
   if (recencyScores.length > 0 && Math.max(...recencyScores) > 0) {
     const currentMetric = allMetrics.find((m: any) => m.downloads_7d === downloads7d) as any;
-    const currentRecency = currentMetric?.published_at 
-      ? 1 / (1 + (now.getTime() - new Date(currentMetric.published_at).getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
-    
-    const minRecency = Math.min(...recencyScores);
-    const maxRecency = Math.max(...recencyScores);
-    
-    if (maxRecency > minRecency) {
-      return normalize(currentRecency, minRecency, maxRecency);
+    if (currentMetric?.published_at) {
+      const currentPublishedDate = new Date(currentMetric.published_at);
+      const hoursSincePublished = Math.max(0, (now.getTime() - currentPublishedDate.getTime()) / (1000 * 60 * 60));
+      const currentRecency = 1 / (1 + hoursSincePublished / 24);
+      
+      const minRecency = Math.min(...recencyScores);
+      const maxRecency = Math.max(...recencyScores);
+      
+      if (maxRecency > minRecency) {
+        return normalize(currentRecency, minRecency, maxRecency);
+      } else if (maxRecency > 0) {
+        // All papers have same recency (same day), use time-of-day as tiebreaker
+        const currentHours = currentPublishedDate.getHours() + currentPublishedDate.getMinutes() / 60;
+        const allHours = publishedDates.map(d => d.getHours() + d.getMinutes() / 60);
+        const minHours = Math.min(...allHours);
+        const maxHours = Math.max(...allHours);
+        if (maxHours > minHours) {
+          return normalize(currentHours, minHours, maxHours);
+        }
+        // Final: use index as tiebreaker
+        const paperIndex = allMetrics.findIndex(m => (m as any).downloads_7d === downloads7d);
+        if (paperIndex >= 0 && allMetrics.length > 1) {
+          return 1 - (paperIndex / (allMetrics.length - 1));
+        }
+      }
     }
   }
   
