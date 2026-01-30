@@ -84,11 +84,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Sort by engagement score descending
+    // Sort by engagement score descending, then by published_at if scores are equal
     filtered.sort((a, b) => {
       const scoreA = a.metrics?.engagement_score || 0;
       const scoreB = b.metrics?.engagement_score || 0;
-      return scoreB - scoreA;
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      // If scores are equal, sort by published_at (newest first)
+      return new Date(b.published_at).getTime() - new Date(a.published_at).getTime();
     });
 
     return NextResponse.json(filtered);
