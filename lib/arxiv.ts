@@ -127,3 +127,147 @@ export async function fetchRecentPapers(hoursBack: number): Promise<ArxivPaper[]
 
   return Array.from(uniquePapers.values());
 }
+
+/**
+ * Fetch papers from a date range (for backfilling)
+ * Fetches papers month by month to avoid API limits
+ */
+export async function fetchPapersByDateRange(
+  startDate: Date,
+  endDate: Date
+): Promise<ArxivPaper[]> {
+  const categories = ['cs.AI', 'cs.LG', 'stat.ML'];
+  const allPapers: ArxivPaper[] = [];
+
+  // Helper function to format date for arXiv API (YYYYMMDD)
+  function formatDateForArxiv(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  }
+
+  // Process month by month to avoid overwhelming the API
+  const current = new Date(startDate);
+  const end = new Date(endDate);
+
+  while (current <= end) {
+    // Calculate month end
+    const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
+    const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+    
+    // Adjust to actual date range
+    const rangeStart = current > monthStart ? current : monthStart;
+    const rangeEnd = monthEnd > end ? end : monthEnd;
+
+    const startStr = formatDateForArxiv(rangeStart);
+    const endStr = formatDateForArxiv(rangeEnd);
+
+    console.log(`Fetching papers from ${startStr} to ${endStr}...`);
+
+    for (const category of categories) {
+      // Use arXiv date range query: submittedDate:[YYYYMMDD*TO*YYYYMMDD*]
+      const dateQuery = `submittedDate:[${startStr}*TO*${endStr}*]`;
+      const url = `http://export.arxiv.org/api/query?search_query=cat:${category}+AND+${encodeURIComponent(dateQuery)}&sortBy=submittedDate&sortOrder=descending&max_results=2000`;
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.warn(`Failed to fetch ${category} for ${startStr}-${endStr}: ${response.statusText}`);
+          continue;
+        }
+
+        const xmlText = await response.text();
+        const parser = new XMLParser({
+          ignoreAttributes: false,
+          attributeNamePrefix: '@_',
+          textNodeName: '#text',
+        });
+
+        const result = parser.parse(xmlText);
+        const entries = result.feed?.entry || [];
+
+        if (!Array.isArray(entries)) {
+          continue;
+        }
+
+        for (const entry of entries) {
+          const published = entry.published?.['#text'] || entry.published;
+          const updated = entry.updated?.['#text'] || entry.updated;
+
+          const publishedDate = published ? new Date(published) : null;
+          const updatedDate = updated ? new Date(updated) : null;
+
+          // Filter by actual date range (in case API returns extra results)
+          if (publishedDate && (publishedDate < startDate || publishedDate > endDate)) {
+            continue;
+          }
+
+          const fullId = entry.id?.['#text'] || entry.id || '';
+          const arxivId = extractArxivId(fullId);
+
+          if (!arxivId) {
+            continue;
+          }
+
+          const title = entry.title?.['#text'] || entry.title || '';
+          const abstract = entry.summary?.['#text'] || entry.summary || '';
+
+          const authors: string[] = [];
+          const authorEntries = entry.author || [];
+          const authorArray = Array.isArray(authorEntries) ? authorEntries : [authorEntries];
+          for (const author of authorArray) {
+            const name = author.name?.['#text'] || author.name;
+            if (name) {
+              authors.push(name);
+            }
+          }
+
+          const categories: string[] = [];
+          const categoryEntries = entry.category || [];
+          const categoryArray = Array.isArray(categoryEntries) ? categoryEntries : [categoryEntries];
+          for (const cat of categoryArray) {
+            const term = cat['@_term'] || cat.term;
+            if (term && (term.startsWith('cs.') || term.startsWith('stat.'))) {
+              categories.push(term);
+            }
+          }
+
+          if (!categories.some(cat => ['cs.AI', 'cs.LG', 'stat.ML'].includes(cat))) {
+            continue;
+          }
+
+          allPapers.push({
+            id: arxivId,
+            title: title.trim(),
+            abstract: abstract.trim(),
+            authors,
+            categories: [...new Set(categories)],
+            published_at: publishedDate?.toISOString() || new Date().toISOString(),
+            updated_at: updatedDate?.toISOString() || publishedDate?.toISOString() || new Date().toISOString(),
+          });
+        }
+
+        // Small delay between requests to be respectful
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        console.error(`Error fetching ${category} for ${startStr}-${endStr}:`, error);
+      }
+    }
+
+    // Move to next month
+    current.setMonth(current.getMonth() + 1);
+    current.setDate(1);
+  }
+
+  // Deduplicate by ID
+  const uniquePapers = new Map<string, ArxivPaper>();
+  for (const paper of allPapers) {
+    if (!uniquePapers.has(paper.id)) {
+      uniquePapers.set(paper.id, paper);
+    }
+  }
+
+  console.log(`Fetched ${uniquePapers.size} unique papers from ${formatDateForArxiv(startDate)} to ${formatDateForArxiv(endDate)}`);
+  return Array.from(uniquePapers.values());
+}
