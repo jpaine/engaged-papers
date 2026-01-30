@@ -104,15 +104,11 @@ export function computeEngagementScore(
 export async function computeEngagementScoresForDate(
   snapshotDate: string
 ): Promise<void> {
-  // Fetch all metrics with their associated papers for published dates
+  // Fetch all metrics
   const { data: metrics, error } = await supabase
     .from('paper_metrics')
-    .select(`
-      *,
-      papers!inner(published_at)
-    `)
-    .eq('snapshot_date', snapshotDate)
-    .order('papers(published_at)', { ascending: false });
+    .select('*')
+    .eq('snapshot_date', snapshotDate);
 
   if (error) {
     throw new Error(`Failed to fetch metrics: ${error.message}`);
@@ -122,11 +118,42 @@ export async function computeEngagementScoresForDate(
     return;
   }
 
-  // Extract published dates for recency-based scoring
-  const metricsWithDates = metrics.map((m: any) => ({
+  // Fetch published dates for all papers
+  const paperIds = metrics.map(m => m.paper_id);
+  const { data: papers, error: papersError } = await supabase
+    .from('papers')
+    .select('id, published_at')
+    .in('id', paperIds);
+
+  if (papersError) {
+    throw new Error(`Failed to fetch papers: ${papersError.message}`);
+  }
+
+  // Create a map of paper_id -> published_at
+  const paperDateMap = new Map<string, string>();
+  for (const paper of papers || []) {
+    paperDateMap.set(paper.id, paper.published_at);
+  }
+
+  if (error) {
+    throw new Error(`Failed to fetch metrics: ${error.message}`);
+  }
+
+  if (!metrics || metrics.length === 0) {
+    return;
+  }
+
+  // Attach published dates to metrics for recency-based scoring
+  const metricsWithDates = metrics.map((m) => ({
     ...m,
-    published_at: m.papers?.published_at || null,
+    published_at: paperDateMap.get(m.paper_id) || null,
   }));
+
+  // Sort by published_at (newest first) for better scoring
+  metricsWithDates.sort((a: any, b: any) => {
+    if (!a.published_at || !b.published_at) return 0;
+    return new Date(b.published_at).getTime() - new Date(a.published_at).getTime();
+  });
 
   // Compute scores for all metrics
   const updates = metricsWithDates.map((metric: any) => {
