@@ -130,7 +130,7 @@ export async function fetchRecentPapers(hoursBack: number): Promise<ArxivPaper[]
 
 /**
  * Fetch papers from a date range (for backfilling)
- * Fetches papers month by month to avoid API limits
+ * Fetches papers in batches and filters by date in code (more reliable than API date filtering)
  */
 export async function fetchPapersByDateRange(
   startDate: Date,
@@ -139,42 +139,26 @@ export async function fetchPapersByDateRange(
   const categories = ['cs.AI', 'cs.LG', 'stat.ML'];
   const allPapers: ArxivPaper[] = [];
 
-  // Helper function to format date for arXiv API (YYYYMMDD)
-  function formatDateForArxiv(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
+  console.log(`Fetching papers from ${startDate.toISOString()} to ${endDate.toISOString()}...`);
 
-  // Process month by month to avoid overwhelming the API
-  const current = new Date(startDate);
-  const end = new Date(endDate);
+  for (const category of categories) {
+    // Fetch papers in batches - arXiv API returns up to 2000 results per query
+    // We'll fetch multiple batches to cover the date range
+    let startIndex = 0;
+    const batchSize = 2000;
+    let hasMore = true;
+    let batchCount = 0;
+    const maxBatches = 10; // Limit to avoid infinite loops
 
-  while (current <= end) {
-    // Calculate month end
-    const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
-    const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
-    
-    // Adjust to actual date range
-    const rangeStart = current > monthStart ? current : monthStart;
-    const rangeEnd = monthEnd > end ? end : monthEnd;
-
-    const startStr = formatDateForArxiv(rangeStart);
-    const endStr = formatDateForArxiv(rangeEnd);
-
-    console.log(`Fetching papers from ${startStr} to ${endStr}...`);
-
-    for (const category of categories) {
-      // Use arXiv date range query: submittedDate:[YYYYMMDD*TO*YYYYMMDD*]
-      const dateQuery = `submittedDate:[${startStr}*TO*${endStr}*]`;
-      const url = `http://export.arxiv.org/api/query?search_query=cat:${category}+AND+${encodeURIComponent(dateQuery)}&sortBy=submittedDate&sortOrder=descending&max_results=2000`;
+    while (hasMore && batchCount < maxBatches) {
+      const url = `http://export.arxiv.org/api/query?search_query=cat:${category}&sortBy=submittedDate&sortOrder=descending&start=${startIndex}&max_results=${batchSize}`;
 
       try {
+        console.log(`Fetching ${category} batch ${batchCount + 1} (start=${startIndex})...`);
         const response = await fetch(url);
         if (!response.ok) {
-          console.warn(`Failed to fetch ${category} for ${startStr}-${endStr}: ${response.statusText}`);
-          continue;
+          console.warn(`Failed to fetch ${category} batch ${batchCount + 1}: ${response.statusText}`);
+          break;
         }
 
         const xmlText = await response.text();
@@ -187,9 +171,13 @@ export async function fetchPapersByDateRange(
         const result = parser.parse(xmlText);
         const entries = result.feed?.entry || [];
 
-        if (!Array.isArray(entries)) {
-          continue;
+        if (!Array.isArray(entries) || entries.length === 0) {
+          hasMore = false;
+          break;
         }
+
+        let papersInRange = 0;
+        let papersOutOfRange = 0;
 
         for (const entry of entries) {
           const published = entry.published?.['#text'] || entry.published;
@@ -198,10 +186,21 @@ export async function fetchPapersByDateRange(
           const publishedDate = published ? new Date(published) : null;
           const updatedDate = updated ? new Date(updated) : null;
 
-          // Filter by actual date range (in case API returns extra results)
-          if (publishedDate && (publishedDate < startDate || publishedDate > endDate)) {
+          // Filter by date range
+          const isInRange = (publishedDate && publishedDate >= startDate && publishedDate <= endDate) ||
+                           (updatedDate && updatedDate >= startDate && updatedDate <= endDate);
+
+          if (!isInRange) {
+            papersOutOfRange++;
+            // If we're getting papers that are too old, we can stop fetching more batches
+            if (publishedDate && publishedDate < startDate) {
+              hasMore = false;
+              break;
+            }
             continue;
           }
+
+          papersInRange++;
 
           const fullId = entry.id?.['#text'] || entry.id || '';
           const arxivId = extractArxivId(fullId);
@@ -248,16 +247,28 @@ export async function fetchPapersByDateRange(
           });
         }
 
+        console.log(`  Batch ${batchCount + 1}: ${papersInRange} papers in range, ${papersOutOfRange} out of range`);
+
+        // If we got fewer results than requested, we've reached the end
+        if (entries.length < batchSize) {
+          hasMore = false;
+        }
+
+        // If all papers in this batch were out of range and too old, stop
+        if (papersInRange === 0 && papersOutOfRange > 0) {
+          hasMore = false;
+        }
+
+        startIndex += batchSize;
+        batchCount++;
+
         // Small delay between requests to be respectful
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
-        console.error(`Error fetching ${category} for ${startStr}-${endStr}:`, error);
+        console.error(`Error fetching ${category} batch ${batchCount + 1}:`, error);
+        break;
       }
     }
-
-    // Move to next month
-    current.setMonth(current.getMonth() + 1);
-    current.setDate(1);
   }
 
   // Deduplicate by ID
@@ -268,6 +279,6 @@ export async function fetchPapersByDateRange(
     }
   }
 
-  console.log(`Fetched ${uniquePapers.size} unique papers from ${formatDateForArxiv(startDate)} to ${formatDateForArxiv(endDate)}`);
+  console.log(`Fetched ${uniquePapers.size} unique papers from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
   return Array.from(uniquePapers.values());
 }
