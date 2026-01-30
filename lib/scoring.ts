@@ -35,47 +35,22 @@ export function computeEngagementScore(
   }
   
   // Fallback: Use recency-based scoring when all citations are 0
-  // This gives newer papers a higher baseline score
-  // Use exact timestamp differences for precise differentiation
-  const now = new Date().getTime();
-  const timestampScores: number[] = [];
+  // Sort metrics by published date (newest first) and assign scores based on position
+  const metricsWithDates = allMetrics.map((m: any) => ({
+    ...m,
+    published_at: m.published_at || null,
+  })).sort((a: any, b: any) => {
+    if (!a.published_at || !b.published_at) return 0;
+    return new Date(b.published_at).getTime() - new Date(a.published_at).getTime();
+  });
   
-  for (const m of allMetrics) {
-    const metricWithDate = m as any;
-    if (metricWithDate.published_at) {
-      const publishedTimestamp = new Date(metricWithDate.published_at).getTime();
-      // Use inverse of milliseconds since published (newer = higher score)
-      // Add 1 to avoid division by zero, scale by 1 day in ms
-      const msSincePublished = Math.max(0, now - publishedTimestamp);
-      const score = 1 / (1 + msSincePublished / (1000 * 60 * 60 * 24)); // Normalize by 1 day
-      timestampScores.push(score);
-    } else {
-      timestampScores.push(0);
-    }
-  }
+  // Find the index of the current metric in the sorted list
+  const paperIndex = metricsWithDates.findIndex((m: any) => m.downloads_7d === downloads7d);
   
-  if (timestampScores.length > 0 && Math.max(...timestampScores) > 0) {
-    const currentMetric = allMetrics.find((m: any) => m.downloads_7d === downloads7d) as any;
-    if (currentMetric?.published_at) {
-      const currentPublishedTimestamp = new Date(currentMetric.published_at).getTime();
-      const msSincePublished = Math.max(0, now - currentPublishedTimestamp);
-      const currentScore = 1 / (1 + msSincePublished / (1000 * 60 * 60 * 24));
-      
-      const minScore = Math.min(...timestampScores);
-      const maxScore = Math.max(...timestampScores);
-      
-      if (maxScore > minScore) {
-        return normalize(currentScore, minScore, maxScore);
-      }
-    }
-  }
-  
-  // Final fallback: use paper index (newer papers get slightly higher scores)
-  // This ensures all papers get different scores even if published at exact same time
-  const paperIndex = allMetrics.findIndex(m => m.downloads_7d === downloads7d);
-  if (paperIndex >= 0 && allMetrics.length > 1) {
-    // Distribute scores from 0.5 to 1.0 based on index (newer = higher)
-    return 0.5 + (0.5 * (1 - paperIndex / (allMetrics.length - 1)));
+  if (paperIndex >= 0 && metricsWithDates.length > 1) {
+    // Distribute scores from 0.1 to 1.0 based on recency (newer = higher)
+    // This ensures meaningful differentiation even when all citations are 0
+    return 0.1 + (0.9 * (1 - paperIndex / (metricsWithDates.length - 1)));
   }
   
   return 0;
