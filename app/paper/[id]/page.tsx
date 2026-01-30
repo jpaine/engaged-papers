@@ -198,12 +198,6 @@ export default function PaperDetail() {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">GitHub Repositories</dt>
-                    <dd className="mt-1 text-sm text-gray-900">
-                      {paper.metrics.github_repo_count}
-                    </dd>
-                  </div>
-                  <div>
                     <dt className="text-sm font-medium text-gray-500">Downloads (7d)</dt>
                     <dd className="mt-1 text-sm text-gray-900">
                       {paper.metrics.downloads_7d} (stub)

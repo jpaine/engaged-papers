@@ -5,7 +5,7 @@ Track engagement signals for arXiv papers in AI, Machine Learning, and Statistic
 ## Features
 
 - **arXiv Ingestion**: Automatically fetches papers from cs.AI, cs.LG, and stat.ML categories
-- **Engagement Signals**: Tracks GitHub repository mentions and computes engagement scores
+- **Engagement Signals**: Computes engagement scores based on download metrics
 - **Daily Snapshots**: Maintains historical metrics for trend analysis
 - **Rising Papers**: Identifies top papers by engagement score
 - **Filtering**: Filter by category and minimum engagement score
@@ -46,7 +46,6 @@ cp env.example .env.local
 4. Set up your environment variables in `.env.local`:
    - `SUPABASE_URL`: Your Supabase project URL
    - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key (server-side only)
-   - `GITHUB_TOKEN`: (Optional) GitHub personal access token for repo counting
 
 ### Database Setup
 
@@ -110,13 +109,12 @@ git push -u origin main
 3. Add environment variables in Vercel dashboard:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `GITHUB_TOKEN` (optional)
 
 4. Deploy - Vercel will automatically detect Next.js and deploy
 
 ### Cron Job
 
-The ingestion cron job runs every 6 hours automatically via Vercel Cron (configured in `vercel.json`).
+The ingestion cron job runs daily at midnight UTC automatically via Vercel Cron (configured in `vercel.json`).
 
 To verify cron is working:
 1. Check Vercel dashboard → Your Project → Cron Jobs
@@ -137,7 +135,6 @@ engaged-papers/
 │   └── page.tsx               # Home page
 ├── lib/
 │   ├── arxiv.ts               # arXiv fetching logic
-│   ├── github.ts              # GitHub API integration
 │   ├── scoring.ts             # Engagement score computation
 │   └── supabase.ts            # Supabase client
 ├── supabase/
@@ -178,7 +175,7 @@ Response:
 
 ### GET /api/cron/ingest
 
-Ingests papers from the last 24 hours. Called automatically by Vercel Cron every 6 hours.
+Ingests papers from the last 24 hours. Called automatically by Vercel Cron daily at midnight UTC.
 
 ## Database Schema
 
@@ -198,7 +195,7 @@ Ingests papers from the last 24 hours. Called automatically by Vercel Cron every
 - `snapshot_date` (date): Date of the snapshot
 - `downloads_total` (int): Total downloads (stub for MVP)
 - `downloads_7d` (int): Downloads in last 7 days (stub for MVP)
-- `github_repo_count` (int): Number of GitHub repos mentioning the paper
+- `github_repo_count` (int): Not used (kept for schema compatibility)
 - `engagement_score` (float): Computed engagement score (0-1)
 
 Unique constraint: `(paper_id, snapshot_date)`
@@ -206,10 +203,10 @@ Unique constraint: `(paper_id, snapshot_date)`
 ## Engagement Score Formula
 
 ```
-engagementScore = 0.6 * normalize(downloads_7d) + 0.4 * normalize(github_repo_count)
+engagementScore = normalize(downloads_7d)
 ```
 
-For MVP, `downloads_7d` is stubbed to 0, so the score is based only on GitHub repo count normalization.
+For MVP, `downloads_7d` is stubbed to 0, so scores will be 0 until real download data is integrated.
 
 ## Manual Steps Checklist
 
@@ -219,7 +216,6 @@ After cloning and setting up:
 - [ ] Link local project: `npx supabase link --project-ref <your-ref>`
 - [ ] Push migrations: `npx supabase db push`
 - [ ] Copy `env.example` to `.env.local` and fill in values
-- [ ] (Optional) Create GitHub personal access token for repo counting
 - [ ] Test locally: `npm run dev`
 - [ ] Test ingestion: `curl http://localhost:3000/api/cron/ingest`
 - [ ] Push to GitHub: `git push -u origin main`

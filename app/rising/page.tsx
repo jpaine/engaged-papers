@@ -123,9 +123,6 @@ export default function Rising() {
                             <p className="text-sm font-medium text-gray-900">
                               Score: {paper.metrics.engagement_score.toFixed(3)}
                             </p>
-                            <p className="text-xs text-gray-500">
-                              GitHub: {paper.metrics.github_repo_count}
-                            </p>
                           </div>
                         )}
                       </div>

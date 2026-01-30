@@ -13,24 +13,21 @@ function normalize(value: number, min: number, max: number): number {
 
 /**
  * Compute engagement score for a single paper metric
- * Formula: 0.6 * normalize(downloads_7d) + 0.4 * normalize(github_repo_count)
- * For MVP: downloads_7d is stubbed to 0, so only normalize github_repo_count
+ * Formula: normalize(downloads_7d)
+ * For MVP: downloads_7d is stubbed to 0, so score will be 0 until real data is added
  */
 export function computeEngagementScore(
   downloads7d: number,
   githubRepoCount: number,
   allMetrics: PaperMetric[]
 ): number {
-  // For MVP, downloads_7d is always 0, so its normalization is 0
-  const downloads7dNorm = 0;
+  // Normalize downloads_7d across all papers
+  const downloads7dCounts = allMetrics.map(m => m.downloads_7d);
+  const minDownloads = Math.min(...downloads7dCounts, 0);
+  const maxDownloads = Math.max(...downloads7dCounts, 0);
+  const downloads7dNorm = normalize(downloads7d, minDownloads, maxDownloads);
 
-  // Normalize github_repo_count across all papers
-  const githubCounts = allMetrics.map(m => m.github_repo_count);
-  const minGithub = Math.min(...githubCounts, 0);
-  const maxGithub = Math.max(...githubCounts, 0);
-  const githubNorm = normalize(githubRepoCount, minGithub, maxGithub);
-
-  return 0.6 * downloads7dNorm + 0.4 * githubNorm;
+  return downloads7dNorm;
 }
 
 /**

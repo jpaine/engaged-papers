@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { fetchRecentPapers } from '@/lib/arxiv';
-import { searchRepoCountForArxivId } from '@/lib/github';
 import { supabase, Paper, PaperMetric } from '@/lib/supabase';
 import { computeEngagementScoresForDate } from '@/lib/scoring';
 
@@ -60,9 +59,6 @@ export async function GET() {
         inserted++;
       }
 
-      // Fetch GitHub repo count (optional, graceful if no token)
-      const githubRepoCount = await searchRepoCountForArxivId(arxivPaper.id);
-
       // Check if metric for today already exists
       const { data: existingMetric } = await supabase
         .from('paper_metrics')
@@ -76,7 +72,7 @@ export async function GET() {
         snapshot_date: today,
         downloads_total: 0, // STUB
         downloads_7d: 0, // STUB
-        github_repo_count: githubRepoCount,
+        github_repo_count: 0, // Not used
         engagement_score: 0, // Will be computed after all metrics are inserted
       };
 
