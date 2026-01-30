@@ -20,12 +20,13 @@ export async function fetchRecentPapers(hoursBack: number): Promise<ArxivPaper[]
   const categories = ['cs.AI', 'cs.LG', 'stat.ML'];
   const cutoffDate = new Date();
   cutoffDate.setHours(cutoffDate.getHours() - hoursBack);
-  const cutoffDateStr = cutoffDate.toISOString().split('T')[0].replace(/-/g, '');
 
   const allPapers: ArxivPaper[] = [];
 
   for (const category of categories) {
-    const url = `http://export.arxiv.org/api/query?search_query=cat:${category}+AND+submittedDate:[${cutoffDateStr}*]+OR+lastUpdatedDate:[${cutoffDateStr}*]&sortBy=submittedDate&sortOrder=descending&max_results=100`;
+    // Fetch recent papers without date filtering in query (more reliable)
+    // We'll filter by date in code after fetching
+    const url = `http://export.arxiv.org/api/query?search_query=cat:${category}&sortBy=submittedDate&sortOrder=descending&max_results=200`;
     
     try {
       const response = await fetch(url);
@@ -56,7 +57,11 @@ export async function fetchRecentPapers(hoursBack: number): Promise<ArxivPaper[]
         const publishedDate = published ? new Date(published) : null;
         const updatedDate = updated ? new Date(updated) : null;
         
-        if (publishedDate && publishedDate < cutoffDate && updatedDate && updatedDate < cutoffDate) {
+        // Include paper if published or updated within the time window
+        const isRecent = (publishedDate && publishedDate >= cutoffDate) || 
+                        (updatedDate && updatedDate >= cutoffDate);
+        
+        if (!isRecent) {
           continue;
         }
 
