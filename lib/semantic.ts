@@ -18,11 +18,17 @@ export async function fetchCitationCount(arxivId: string): Promise<number> {
     // Format: https://api.semanticscholar.org/graph/v1/paper/arXiv:{arxivId}
     const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${arxivId}?fields=citationCount,referenceCount,influentialCitationCount`;
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'engaged-papers/1.0',
-      },
-    });
+    const headers: HeadersInit = {
+      'User-Agent': 'engaged-papers/1.0',
+    };
+    
+    // Add API key if available (allows 5000 requests per 5 minutes vs 100 without)
+    const apiKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
+    if (apiKey) {
+      headers['x-api-key'] = apiKey;
+    }
+    
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -63,6 +69,10 @@ export async function fetchCitationCountsBatch(
   
   // Process sequentially with delays to respect rate limits
   // Semantic Scholar allows 100 requests per 5 minutes without API key
+  // With API key: 5000 requests per 5 minutes
+  const hasApiKey = !!process.env.SEMANTIC_SCHOLAR_API_KEY;
+  const requestDelay = hasApiKey ? 100 : 3000; // Faster with API key
+  
   for (let i = 0; i < arxivIds.length; i++) {
     const arxivId = arxivIds[i];
     
@@ -70,9 +80,9 @@ export async function fetchCitationCountsBatch(
       const count = await fetchCitationCount(arxivId);
       results.set(arxivId, count);
       
-      // Delay between requests (3 seconds = ~20 requests per minute = safe limit)
+      // Delay between requests (shorter delay if API key is present)
       if (i < arxivIds.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        await new Promise(resolve => setTimeout(resolve, requestDelay));
       }
     } catch (error) {
       console.error(`Error fetching citation for ${arxivId}:`, error);
