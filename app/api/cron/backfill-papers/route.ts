@@ -13,6 +13,8 @@ export async function GET() {
     const startDate = new Date('2025-12-01T00:00:00Z');
     const endDate = new Date();
     
+    console.log(`Backfill: startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
+    
     console.log(`Starting backfill from ${startDate.toISOString()} to ${endDate.toISOString()}...`);
     
     // Fetch all papers in the date range
