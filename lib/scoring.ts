@@ -13,18 +13,24 @@ function normalize(value: number, min: number, max: number): number {
 
 /**
  * Compute engagement score for a single paper metric
- * Formula: normalize(downloads_7d)
- * For MVP: downloads_7d is stubbed to 0, so score will be 0 until real data is added
+ * Formula: normalize(downloads_7d) where downloads_7d contains citation counts
+ * Uses citation counts from Semantic Scholar as the engagement metric
  */
 export function computeEngagementScore(
   downloads7d: number,
   githubRepoCount: number,
   allMetrics: PaperMetric[]
 ): number {
-  // Normalize downloads_7d across all papers
+  // Normalize downloads_7d (which contains citation counts) across all papers
   const downloads7dCounts = allMetrics.map(m => m.downloads_7d);
   const minDownloads = Math.min(...downloads7dCounts, 0);
   const maxDownloads = Math.max(...downloads7dCounts, 0);
+  
+  // If all papers have 0 citations, return 0
+  if (maxDownloads === 0) {
+    return 0;
+  }
+  
   const downloads7dNorm = normalize(downloads7d, minDownloads, maxDownloads);
 
   return downloads7dNorm;

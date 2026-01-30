@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchRecentPapers } from '@/lib/arxiv';
+import { fetchCitationCountsBatch } from '@/lib/semantic';
 import { supabase, Paper, PaperMetric } from '@/lib/supabase';
 import { computeEngagementScoresForDate } from '@/lib/scoring';
 
@@ -16,6 +17,11 @@ export async function GET() {
 
     const today = new Date().toISOString().split('T')[0];
     const metricsToInsert: Omit<PaperMetric, 'id'>[] = [];
+
+    // Fetch citation counts for all papers in batch (with rate limiting)
+    const arxivIds = papers.map(p => p.id);
+    console.log(`Fetching citation counts for ${arxivIds.length} papers...`);
+    const citationCounts = await fetchCitationCountsBatch(arxivIds, 10, 300); // 10 at a time, 300ms delay
 
     for (const arxivPaper of papers) {
       // Upsert paper
@@ -67,11 +73,14 @@ export async function GET() {
         .eq('snapshot_date', today)
         .single();
 
+      // Get citation count from Semantic Scholar
+      const citationCount = citationCounts.get(arxivPaper.id) || 0;
+
       const metricData: Omit<PaperMetric, 'id'> = {
         paper_id: arxivPaper.id,
         snapshot_date: today,
-        downloads_total: 0, // STUB
-        downloads_7d: 0, // STUB
+        downloads_total: citationCount, // Store total citations here
+        downloads_7d: citationCount, // Use citations as engagement metric
         github_repo_count: 0, // Not used
         engagement_score: 0, // Will be computed after all metrics are inserted
       };
