@@ -21,7 +21,8 @@ export function computeEngagementScore(
   downloads7d: number,
   githubRepoCount: number,
   allMetrics: PaperMetric[],
-  publishedAt?: string
+  publishedAt?: string,
+  paperId?: string
 ): number {
   // Normalize downloads_7d (which contains citation counts) across all papers
   const downloads7dCounts = allMetrics.map(m => m.downloads_7d);
@@ -44,8 +45,10 @@ export function computeEngagementScore(
     return new Date(b.published_at).getTime() - new Date(a.published_at).getTime();
   });
   
-  // Find the index of the current metric in the sorted list
-  const paperIndex = metricsWithDates.findIndex((m: any) => m.downloads_7d === downloads7d);
+  // Find the index of the current metric in the sorted list using paper_id for uniqueness
+  const paperIndex = paperId 
+    ? metricsWithDates.findIndex((m: any) => m.paper_id === paperId)
+    : metricsWithDates.findIndex((m: any) => m.downloads_7d === downloads7d);
   
   if (paperIndex >= 0 && metricsWithDates.length > 1) {
     // Distribute scores from 0.1 to 1.0 based on recency (newer = higher)
@@ -112,7 +115,8 @@ export async function computeEngagementScoresForDate(
       metric.downloads_7d,
       metric.github_repo_count,
       metricsWithDates,
-      metric.published_at
+      metric.published_at,
+      metric.paper_id
     );
     return {
       id: metric.id,
