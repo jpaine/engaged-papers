@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const daysBack = parseInt(url.searchParams.get('days') || '7');
     const customStart = url.searchParams.get('startDate');
+    const limit = parseInt(url.searchParams.get('limit') || '100'); // Limit papers processed per run
     
     let startDate: Date;
     let endDate = new Date();
@@ -25,13 +26,19 @@ export async function GET(request: Request) {
       startDate.setDate(startDate.getDate() - daysBack);
     }
     
-    console.log(`Backfill: startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}, daysBack=${daysBack}`);
+    console.log(`Backfill: startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}, daysBack=${daysBack}, limit=${limit}`);
     
     console.log(`Starting backfill from ${startDate.toISOString()} to ${endDate.toISOString()}...`);
     
     // Fetch all papers in the date range
     const papers = await fetchPapersByDateRange(startDate, endDate);
     console.log(`Found ${papers.length} papers to process`);
+    
+    // Limit the number of papers processed to avoid timeout
+    const papersToProcess = papers.slice(0, limit);
+    if (papers.length > limit) {
+      console.log(`Limiting to first ${limit} papers (out of ${papers.length} total)`);
+    }
 
     let inserted = 0;
     let updated = 0;
@@ -44,16 +51,16 @@ export async function GET(request: Request) {
     const skipCitations = url.searchParams.get('skipCitations') !== 'false';
     
     let citationCounts = new Map<string, number>();
-    if (!skipCitations && papers.length <= 50) {
+    if (!skipCitations && papersToProcess.length <= 50) {
       // Only fetch citations if explicitly requested and paper count is small
-      const arxivIds = papers.map(p => p.id);
+      const arxivIds = papersToProcess.map(p => p.id);
       console.log(`Fetching citation counts for ${arxivIds.length} papers...`);
       citationCounts = await fetchCitationCountsBatch(arxivIds, 1, 3000);
     } else {
-      console.log(`Skipping citation fetching (${papers.length} papers). Use /api/cron/backfill-citations separately.`);
+      console.log(`Skipping citation fetching (${papersToProcess.length} papers). Use /api/cron/backfill-citations separately.`);
     }
 
-    for (const arxivPaper of papers) {
+    for (const arxivPaper of papersToProcess) {
       // Upsert paper
       const { error: paperError } = await supabase
         .from('papers')
@@ -154,7 +161,10 @@ export async function GET(request: Request) {
       ok: true,
       inserted,
       updated,
-      papersProcessed: papers.length,
+      papersProcessed: papersToProcess.length,
+      totalPapersFound: papers.length,
+      limit,
+      hasMore: papers.length > limit,
       dateRange: {
         start: startDate.toISOString(),
         end: endDate.toISOString(),
