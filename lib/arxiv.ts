@@ -148,7 +148,7 @@ export async function fetchPapersByDateRange(
     const batchSize = 2000;
     let hasMore = true;
     let batchCount = 0;
-    const maxBatches = 10; // Limit to avoid infinite loops
+    const maxBatches = 3; // Limit to avoid timeouts (3 batches = ~6000 papers max per category)
 
     while (hasMore && batchCount < maxBatches) {
       const url = `http://export.arxiv.org/api/query?search_query=cat:${category}&sortBy=submittedDate&sortOrder=descending&start=${startIndex}&max_results=${batchSize}`;
