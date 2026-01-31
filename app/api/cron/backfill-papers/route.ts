@@ -7,13 +7,25 @@ import { computeEngagementScoresForDate } from '@/lib/scoring';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Backfill from December 1, 2025 to today
-    const startDate = new Date('2025-12-01T00:00:00Z');
-    const endDate = new Date();
+    // Allow optional date range via query params, default to last 7 days for testing
+    const url = new URL(request.url);
+    const daysBack = parseInt(url.searchParams.get('days') || '7');
+    const customStart = url.searchParams.get('startDate');
     
-    console.log(`Backfill: startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
+    let startDate: Date;
+    let endDate = new Date();
+    
+    if (customStart) {
+      startDate = new Date(customStart);
+    } else {
+      // Default: last N days
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysBack);
+    }
+    
+    console.log(`Backfill: startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}, daysBack=${daysBack}`);
     
     console.log(`Starting backfill from ${startDate.toISOString()} to ${endDate.toISOString()}...`);
     
