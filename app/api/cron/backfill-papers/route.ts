@@ -39,10 +39,19 @@ export async function GET(request: Request) {
     const today = new Date().toISOString().split('T')[0];
     const metricsToInsert: Omit<PaperMetric, 'id'>[] = [];
 
-    // Fetch citation counts for all papers (with rate limiting)
-    const arxivIds = papers.map(p => p.id);
-    console.log(`Fetching citation counts for ${arxivIds.length} papers...`);
-    const citationCounts = await fetchCitationCountsBatch(arxivIds, 1, 3000); // Sequential with 3s delay
+    // Skip citation fetching for backfill (too slow, can be done separately via /api/cron/backfill-citations)
+    // For backfill, we'll set citations to 0 and let the citation backfill endpoint handle it later
+    const skipCitations = url.searchParams.get('skipCitations') !== 'false';
+    
+    let citationCounts = new Map<string, number>();
+    if (!skipCitations && papers.length <= 50) {
+      // Only fetch citations if explicitly requested and paper count is small
+      const arxivIds = papers.map(p => p.id);
+      console.log(`Fetching citation counts for ${arxivIds.length} papers...`);
+      citationCounts = await fetchCitationCountsBatch(arxivIds, 1, 3000);
+    } else {
+      console.log(`Skipping citation fetching (${papers.length} papers). Use /api/cron/backfill-citations separately.`);
+    }
 
     for (const arxivPaper of papers) {
       // Upsert paper
