@@ -148,7 +148,9 @@ export async function fetchPapersByDateRange(
     const batchSize = 2000;
     let hasMore = true;
     let batchCount = 0;
-    const maxBatches = 3; // Limit to avoid timeouts (3 batches = ~6000 papers max per category)
+    // For small date ranges (7 days), 1 batch should be enough (~2000 papers)
+    // For larger ranges, increase maxBatches
+    const maxBatches = 1; // Start with 1 batch to avoid timeouts
 
     while (hasMore && batchCount < maxBatches) {
       const url = `http://export.arxiv.org/api/query?search_query=cat:${category}&sortBy=submittedDate&sortOrder=descending&start=${startIndex}&max_results=${batchSize}`;
@@ -262,8 +264,8 @@ export async function fetchPapersByDateRange(
         startIndex += batchSize;
         batchCount++;
 
-        // Small delay between requests to be respectful
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Small delay between requests to be respectful (reduced for speed)
+        await new Promise(resolve => setTimeout(resolve, 200));
       } catch (error) {
         console.error(`Error fetching ${category} batch ${batchCount + 1}:`, error);
         break;
